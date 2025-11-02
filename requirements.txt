@@ -1,0 +1,11 @@
+requests
+beautifulsoup4
+selenium
+pdfplumber
+pandas
+numpy
+scikit-learn
+nltk
+transformers
+torch
+argparse
