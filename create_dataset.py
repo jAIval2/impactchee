@@ -14,10 +14,19 @@ class DatasetCreator:
     def __init__(self):
         # Patterns to find scope mentions
         self.scope_patterns = {
-            'scope_1': r'\bscope\s*[1I](?:\s+emissions?|\s+ghg|\b)',
-            'scope_2': r'\bscope\s*[2II](?:\s+emissions?|\s+ghg|\b)',
-            'scope_3': r'\bscope\s*[3III](?:\s+emissions?|\s+ghg|\b)'
+            'scope_1': r'\bscope\s*[1I](?:\s+emissions?|\s+ghg|\b|\s*[,&-])',
+            'scope_2': r'\bscope\s*[2II](?:\s+emissions?|\s+ghg|\b|\s*[,&-])',
+            'scope_3': r'\bscope\s*[3III](?:\s+emissions?|\s+ghg|\b|\s*[,&-])'
         }
+        
+        # Additional patterns for better scope detection
+        self.scope_combined_patterns = [
+            r'\bscopes?\s*[1I][-,]?[2II](?:[-,]\s*and\s*|\s*[&,]\s*)[3III]\b',
+            r'all\s+three\s+scopes?\b',
+            r'\bscopes?\s*[1I][-,][3III]\b',
+            r'\bcarbon\s+footprint.*scope\s*[3III]',
+            r'\bghg\s+emissions.*scope\s*[3III]'
+        ]
     
     def find_scope_excerpts(self, text: str) -> List[Dict]:
         """
@@ -27,22 +36,31 @@ class DatasetCreator:
         text_lower = text.lower()
         excerpts = []
         
-        # Find all scope mentions with context
-        # Look for paragraphs that contain "scope" mentions
-        paragraphs = text.split('\n')
+        # Split into lines first
+        lines = text.split('\n')
         
-        for para_idx, paragraph in enumerate(paragraphs):
-            para_lower = paragraph.lower()
+        # Find all lines that mention "scope"
+        for idx, line in enumerate(lines):
+            line_lower = line.lower()
             
             # Must mention "scope" to be relevant
-            if 'scope' not in para_lower:
+            if 'scope' not in line_lower:
                 continue
             
-            # Skip if too short
+            # Build context: take current line + surrounding lines to form a chunk
+            # This helps capture table data spread across multiple lines
+            start_idx = max(0, idx - 3)  # 3 lines before
+            end_idx = min(len(lines), idx + 4)  # 3 lines after
+            
+            # Combine lines into a paragraph with context
+            paragraph = ' '.join(lines[start_idx:end_idx])
+            para_lower = paragraph.lower()
+            
+            # Skip if too short after combining
             if len(paragraph.strip()) < 100:
                 continue
             
-            # Check what scopes are mentioned in this paragraph
+            # Check what scopes are mentioned in this context
             has_scope_1 = bool(re.search(self.scope_patterns['scope_1'], para_lower))
             has_scope_2 = bool(re.search(self.scope_patterns['scope_2'], para_lower))
             has_scope_3 = bool(re.search(self.scope_patterns['scope_3'], para_lower))
@@ -57,15 +75,22 @@ class DatasetCreator:
             # Create excerpt (limit to 500 chars as per requirements)
             excerpt = paragraph.strip()[:500]
             
-            # Only add if it has meaningful content
+            # Only add if it has meaningful content and not duplicate
             if len(excerpt) > 50:
-                excerpts.append({
-                    'text': excerpt,
-                    'label': label,
-                    'has_scope_1': has_scope_1,
-                    'has_scope_2': has_scope_2,
-                    'has_scope_3': has_scope_3
-                })
+                # Check if similar excerpt already exists (avoid duplicates from overlapping context)
+                is_duplicate = any(
+                    excerpt[:200] == existing['text'][:200] 
+                    for existing in excerpts
+                )
+                
+                if not is_duplicate:
+                    excerpts.append({
+                        'text': excerpt,
+                        'label': label,
+                        'has_scope_1': has_scope_1,
+                        'has_scope_2': has_scope_2,
+                        'has_scope_3': has_scope_3
+                    })
         
         return excerpts
     
@@ -87,17 +112,36 @@ class DatasetCreator:
         # Check if it's actual reporting (not future plans)
         # Indicators of ACTUAL reporting
         reporting_phrases = [
+            # Direct reporting statements
             r'report(?:ed|s|ing)?\s+(?:our\s+)?scope\s*3',
-            r'scope\s*3\s+emissions?\s+(?:are|were|totaled?)',
+            r'scope\s*3\s+emissions?\s+(?:are|were|totaled?|amount(?:ed)?)',
             r'scope\s*3\s+emissions?\s+(?:of|:)?\s*[0-9]',
-            r'(?:measured|calculated|disclosed?)\s+(?:our\s+)?scope\s*3',
-            r'scope\s*[1I],?\s*[2II],?\s*and\s*[3III]',
-            r'scope\s*[1I],?\s*[2II]\s*and\s*[3III]\s+emissions?',
+            r'(?:measured|calculated|disclosed?|assess(?:ed)?|monitor(?:ed)?)\s+(?:our\s+)?scope\s*3',
+            
+            # Combined scope reporting
+            r'scope\s*[1I],?\s*[2II],?\s*(?:and|&)\s*[3III]',
+            r'scope\s*[1I],?\s*[2II]\s*(?:and|&)\s*[3III]\s+emissions?',
             r'all\s+three\s+scopes?',
-            r'scopes?\s*[1I]-[3III]',
-            r'scope\s*3.*tonnes?',
-            r'scope\s*3.*tco2e?',
-            r'scope\s*3.*mtco2e?',
+            r'scopes?\s*[1I][-,][3III]',
+            
+            # Quantitative indicators (relaxed to catch table data)
+            r'scope\s*3.*\d+[,\d]*\s*(?:tonnes?|tco2e?|mtco2e?|kt|mt)',
+            r'\d+[,\d]*\s*(?:tonnes?|tco2e?|mtco2e?|kt|mt).*scope\s*3',  # Number before Scope 3
+            r'scope\s*3.*carbon',
+            r'total.*scope\s*3.*emissions?.*\d+',
+            r'scope\s*3.*total.*\d+',
+            
+            # Additional reporting contexts
+            r'scope\s*3.*footprint',
+            r'scope\s*3.*inventory',
+            r'scope\s*3.*(?:emissions?\s+)?data',
+            r'scope\s*3.*metrics?',
+            r'scope\s*3.*performance',
+            r'scope\s*3.*results?',
+            r'scope\s*3\s+category',  # Scope 3 category breakdown
+            r'scope\s*3\s+emissions?\s+table',
+            r'ghg.*scope\s*3',
+            r'scope\s*3.*ghg',
         ]
         
         # Indicators of FUTURE PLANS (should be labeled 0)
@@ -109,7 +153,10 @@ class DatasetCreator:
             r'start.*scope\s*3',
             r'working\s+(?:on|toward).*scope\s*3',
             r'develop.*scope\s*3',
-            r'currently\s+do\s+not.*scope\s*3'
+            r'currently\s+do\s+not.*scope\s*3',
+            r'(?:in\s+the\s+)?process\s+of\s+calculating.*scope\s*3',
+            r'to\s+calculate.*scope\s*3',
+            r'not\s+yet.*scope\s*3',
         ]
         
         # Check for actual reporting

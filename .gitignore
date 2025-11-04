@@ -84,6 +84,7 @@ data/site_structure.html
 !README.md
 
 # Machine Learning Models
+model/
 models/
 checkpoints/
 *.pkl
@@ -91,6 +92,7 @@ checkpoints/
 *.model
 *.pth
 *.pt
+*.safetensors
 tensorboard/
 lightning_logs/
 wandb/

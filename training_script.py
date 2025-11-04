@@ -13,8 +13,9 @@ import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.optim import AdamW
 from transformers import BertTokenizer, BertForSequenceClassification
-from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 from tqdm import tqdm
 import warnings
@@ -54,7 +55,7 @@ class EmissionsDataset(Dataset):
         }
 
 
-def train_epoch(model, dataloader, optimizer, scheduler, device):
+def train_epoch(model, dataloader, optimizer, scheduler, device, class_weights=None):
     """Train for one epoch"""
     model.train()
     total_loss = 0
@@ -73,6 +74,14 @@ def train_epoch(model, dataloader, optimizer, scheduler, device):
         )
         
         loss = outputs.loss
+        
+        # Apply class weights if provided
+        if class_weights is not None:
+            # Recompute loss with class weights
+            logits = outputs.logits
+            loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
+            loss = loss_fn(logits, labels)
+        
         total_loss += loss.item()
         
         loss.backward()
@@ -229,6 +238,15 @@ def main():
         shuffle=False
     )
     
+    # Calculate class weights to handle imbalance
+    label_counts = train_df['label'].value_counts().sort_index()
+    total_samples = len(train_df)
+    class_weights = torch.tensor([
+        total_samples / (2 * label_counts[0]),  # Weight for label 0
+        total_samples / (2 * label_counts[1])   # Weight for label 1
+    ], dtype=torch.float).to(device)
+    print(f"\nClass weights: {class_weights.cpu().numpy()}")
+    
     # Setup optimizer and scheduler
     optimizer = AdamW(model.parameters(), lr=args.learning_rate)
     total_steps = len(train_loader) * args.epochs
@@ -246,7 +264,7 @@ def main():
         print(f"\nEpoch {epoch + 1}/{args.epochs}")
         
         # Train
-        train_loss = train_epoch(model, train_loader, optimizer, scheduler, device)
+        train_loss = train_epoch(model, train_loader, optimizer, scheduler, device, class_weights)
         print(f"Training loss: {train_loss:.4f}")
         
         # Evaluate
@@ -275,10 +293,14 @@ def main():
     print(f"Final Recall: {final_metrics['recall']:.4f}")
     print(f"Final F1: {final_metrics['f1']:.4f}")
     
-    # Prepare output
+    # Prepare output with evaluation metrics
     output = {
         'files_used_for_training': int(train_df['company_name'].nunique()),
-        'exchanges_in_dataset': sorted(train_df['exchange'].unique().tolist())
+        'exchanges_in_dataset': sorted(train_df['exchange'].unique().tolist()),
+        'accuracy': round(final_metrics['accuracy'], 2),
+        'precision': round(final_metrics['precision'], 2),
+        'recall': round(final_metrics['recall'], 2),
+        'f1': round(final_metrics['f1'], 2)
     }
     
     # Print JSON output to stdout
