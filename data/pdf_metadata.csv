@@ -1,8 +1,0 @@
-company,exchange,year,pdf_path,text_path
-Apple Inc.,NASDAQ,2023,data/pdfs/Apple Inc_2023.pdf,data/texts/Apple Inc_2023.txt
-Apple Inc.,NASDAQ,2022,data/pdfs/Apple Inc_2022.pdf,data/texts/Apple Inc_2022.txt
-Apple Inc.,NASDAQ,2021,data/pdfs/Apple Inc_2021.pdf,data/texts/Apple Inc_2021.txt
-Apple Inc.,NASDAQ,2020,data/pdfs/Apple Inc_2020.pdf,data/texts/Apple Inc_2020.txt
-"Tesla, Inc.",NASDAQ,2023,data/pdfs/Tesla Inc_2023.pdf,data/texts/Tesla Inc_2023.txt
-"Tesla, Inc.",NASDAQ,2022,data/pdfs/Tesla Inc_2022.pdf,data/texts/Tesla Inc_2022.txt
-"Tesla, Inc.",NASDAQ,2020,data/pdfs/Tesla Inc_2020.pdf,data/texts/Tesla Inc_2020.txt
